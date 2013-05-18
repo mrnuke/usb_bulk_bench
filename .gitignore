@@ -1,0 +1,8 @@
+# KDevelop project files
+*.kdev4
+
+# Backup files
+*~
+
+# Build directory
+build/

@@ -43,3 +43,7 @@ set(usb_bulk_bench_SOURCES
 add_executable(${PROJECT_NAME}
 	${usb_bulk_bench_SOURCES}
 )
+
+target_link_libraries(${PROJECT_NAME}
+	${PKGDEPS_LIBRARIES}
+)

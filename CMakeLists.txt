@@ -32,7 +32,7 @@ pkg_check_modules(PKGDEPS REQUIRED libusb-1.0)
 include_directories(${PKGDEPS_INCLUDE_DIRS})
 link_directories(${PKGDEPS_LIBRARY_DIRS})
 
-
+add_definitions(-Wall)
 #===============================================================================
 #= Sources and build
 #-------------------------------------------------------------------------------

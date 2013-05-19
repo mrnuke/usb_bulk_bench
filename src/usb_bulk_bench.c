@@ -234,6 +234,13 @@ int main(int argc, char *argv[])
 	return do_benchmark(config);
 }
 
+inline double get_time()
+{
+	struct timespec timer;
+	clock_gettime(CLOCK_MONOTONIC, &timer);
+	return (double)timer.tv_sec + (double)(timer.tv_nsec)/1E9d;
+}
+
 static int do_sync_bench(libusb_device_handle *handle, unsigned char ep,
 			 uint32_t transz)
 {
@@ -266,13 +273,117 @@ static int do_sync_bench(libusb_device_handle *handle, unsigned char ep,
 	free(buf);
 }
 
-static int async_in(libusb_device_handle *handle, uint8_t endpoint)
+static size_t qd;
+static double *starttimes;
+static double *speeds;
+
+static void update_timing(size_t idx, int datalen)
 {
-	return EXIT_SUCCESS;
+	size_t i;
+	double endtime, time, avg_speed;
+
+	endtime = get_time();
+	time = endtime - starttimes[idx];
+	starttimes[idx] = endtime;
+	speeds[idx] = (double)datalen/time;
+
+	avg_speed = 0.0;
+	for (i = 0; i < qd; i++) {
+		avg_speed += speeds[i];
+	}
+
+	printf("\rSpeed %.1f KiB/s", avg_speed/1024 );
+	fflush(stdout);
 }
 
-static int async_out(libusb_device_handle *handle, uint8_t endpoint)
+void async_cb(struct libusb_transfer *transfer)
 {
+	int ret;
+
+	/* A failed transfer can mess up the timings, so halt if we meet one */
+	if (transfer->status != LIBUSB_TRANSFER_COMPLETED)
+	{
+		printf("Transfer failed: %s\n",
+		       libusb_error_name(transfer->status));
+		exit(EXIT_FAILURE);
+	}
+
+	/* The meat and potatoes */
+	update_timing((size_t)transfer->user_data, transfer->actual_length);
+
+	/* Keep running, Forrest */
+	ret = libusb_submit_transfer(transfer);
+	if (ret != LIBUSB_SUCCESS) {
+		printf("Error resubmitting transfer: %s\n",
+		       libusb_error_name(ret));
+		exit(EXIT_FAILURE);
+	}
+}
+
+
+static int do_async_bench(libusb_context *ctx, libusb_device_handle *handle,
+			  unsigned char ep, uint32_t transz, uint8_t depth)
+{
+	int ret;
+	size_t i;
+	uint8_t *buf, *curr_buf;;
+	struct libusb_transfer **transfers;
+
+	if ((buf = malloc(transz * depth)) == NULL) {
+		printf("Cannot allocate buffers\n");
+		return EXIT_FAILURE;
+	}
+
+	if ((transfers = malloc(depth * sizeof(*transfers))) == NULL) {
+		printf("Cannot allocate transfers\n");
+		return EXIT_FAILURE;
+	}
+
+	if ((starttimes = malloc(depth * sizeof(*starttimes))) == NULL) {
+		printf("Cannot allocate stuff\n");
+		return EXIT_FAILURE;
+	}
+
+	if ((speeds = malloc(depth * sizeof(*speeds))) == NULL) {
+		printf("Cannot allocate stuff\n");
+		return EXIT_FAILURE;
+	}
+	memset(speeds, 0, depth * sizeof(*speeds));
+
+	/* update_timing() needs this global. */
+	qd = depth;
+
+	/*
+	 * Submit initial transfers
+	 * The transfers will re-submit themselves when completed
+	 */
+	for (i = 0; i < depth; i++)
+	{
+		transfers[i] = libusb_alloc_transfer(0);
+		curr_buf = buf + transz * i;
+		libusb_fill_bulk_transfer(transfers[i], handle, ep, curr_buf,
+					  transz, async_cb, (void*)i, 1000);
+		starttimes[i] = get_time();
+		ret = libusb_submit_transfer(transfers[i]);
+		if (ret != LIBUSB_SUCCESS) {
+			printf("Error submitting transfer: %s\n",
+			       libusb_error_name(ret));
+			return EXIT_FAILURE;
+		}
+	}
+
+	/*
+	 * Run forever
+	 */
+	while (1) {
+		ret =  libusb_handle_events(ctx);
+		if (ret != LIBUSB_SUCCESS) {
+			printf("Error: %s\n", libusb_error_name(ret));
+			return EXIT_FAILURE;
+		}
+	}
+
+	/* Never reached */
 	return EXIT_SUCCESS;
 }
 
@@ -302,15 +413,10 @@ int do_benchmark(struct bench_cfg *conf)
 	ep = conf->ep;
 	ep |= (conf->dir_out ? LIBUSB_ENDPOINT_OUT : LIBUSB_ENDPOINT_IN);
 
-	if (conf->async) {
-		if (conf->dir_out)
-			return async_out(handle, conf->ep);
-		else
-			return async_in(handle, conf->ep);
-	}
-	else {
+	if (conf->async)
+		return do_async_bench(ctx,handle, ep, conf->size, conf->queue);
+	else
 		return do_sync_bench(handle, ep, conf->size);
-	}
 
 	return EXIT_SUCCESS;
 }

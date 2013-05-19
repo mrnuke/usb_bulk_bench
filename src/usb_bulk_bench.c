@@ -23,8 +23,11 @@
 #include <stdbool.h>
 #include <string.h>
 #include <getopt.h>
+#include <libusb.h>
+#include <sys/time.h>
 
 #define MAX_QUEUE_DEPTH		32
+#define ARRAY_SIZE(x)		(sizeof(x)/sizeof(x[0]))
 
 struct bench_cfg {
 	uint16_t pid;
@@ -34,6 +37,15 @@ struct bench_cfg {
 	bool async;
 	uint8_t queue;
 };
+
+inline uint64_t get_time_nsec()
+{
+	struct timespec timer;
+	clock_gettime(CLOCK_MONOTONIC, &timer);
+	return timer.tv_sec * 1E9 + timer.tv_nsec;
+};
+
+int do_benchmark(struct bench_cfg *conf);
 
 static void print_copyright(void)
 {
@@ -205,6 +217,85 @@ int main(int argc, char *argv[])
 		       config->queue);
 	else
 		printf("\tSynchronous requests\n");
+
+	return do_benchmark(config);
+}
+
+static int sync_in(libusb_device_handle *handle, uint8_t endpoint)
+{
+	int ret, len;
+	unsigned char ep;
+	uint8_t buf[1024];
+	uint64_t start_nsec, end_nsec;
+	double speed;
+
+	ep = endpoint | LIBUSB_ENDPOINT_IN;
+
+	len = 1000000;
+	start_nsec = get_time_nsec();
+	while (1) {
+		ret = libusb_bulk_transfer(handle, ep, buf, sizeof(buf), &len, 1000);
+		if (ret != LIBUSB_SUCCESS) {
+			printf("Bulk transfer error: %s\n", libusb_error_name(ret));
+			return EXIT_FAILURE;
+		}
+		end_nsec = get_time_nsec();
+
+		speed = (double)len / (end_nsec-start_nsec) * 1E9L;
+		printf("\rSpeed %.1fKiB/s", speed/1024 );
+		start_nsec = end_nsec;
+		fflush(stdout);
+	}
+}
+static int sync_out(libusb_device_handle *handle, uint8_t endpoint)
+{
+	return EXIT_SUCCESS;
+}
+
+static int async_in(libusb_device_handle *handle, uint8_t endpoint)
+{
+	return EXIT_SUCCESS;
+}
+
+static int async_out(libusb_device_handle *handle, uint8_t endpoint)
+{
+	return EXIT_SUCCESS;
+}
+
+
+int do_benchmark(struct bench_cfg *conf)
+{
+	int ret;
+	libusb_context *ctx;
+	libusb_device_handle *handle;
+
+	if ((ret= libusb_init(&ctx)) != LIBUSB_SUCCESS) {
+		printf("Initialization error: %s\n", libusb_error_name(ret));
+		return EXIT_FAILURE;
+	}
+
+	handle = libusb_open_device_with_vid_pid(ctx, conf->vid, conf->pid);
+	if (handle == NULL) {
+		printf("Cannot open device.\n");
+		return EXIT_FAILURE;
+	}
+
+	if ((ret = libusb_claim_interface(handle, 0)) != LIBUSB_SUCCESS) {
+		printf("Cannot claim device: %s\n", libusb_error_name(ret));
+	}
+
+	if (conf->async) {
+		if (conf->dir_out)
+			return async_out(handle, conf->ep);
+		else
+			return async_in(handle, conf->ep);
+	}
+	else {
+		if (conf->dir_out)
+			return sync_out(handle, conf->ep);
+		else
+			return sync_in(handle, conf->ep);
+	}
 
 	return EXIT_SUCCESS;
 }

@@ -36,6 +36,7 @@ struct bench_cfg {
 	bool dir_out;
 	bool async;
 	uint8_t queue;
+	uint32_t size;
 };
 
 inline uint64_t get_time_nsec()
@@ -66,7 +67,8 @@ int main(int argc, char *argv[])
 {
 	int option_index = 0;
 	int opt, ret;
-	unsigned int svid = 0, spid = 0, queue_depth = 0, endpoint = 0;
+	unsigned int svid = 0, spid = 0, queue_depth = 0, endpoint = 0,
+		     transfer_size = 0;
 	bool is_IN = false, is_OUT = false, is_sync = false, is_async = false,
 		has_device = false, has_queue_d = false, has_ep = false;
 	struct bench_cfg *config;
@@ -80,6 +82,7 @@ int main(int argc, char *argv[])
 		{"sync",	no_argument,       0, 's'},
 		{"async",	no_argument,       0, 'a'},
 		{"queue-depth",	required_argument, 0, 'q'},
+		{"transfer-size",required_argument,0, 't'},
 		{0,		0,		   0,  0 }
 	};
 
@@ -90,7 +93,7 @@ int main(int argc, char *argv[])
 	 * Parse arguments
 	 */
 	while(1) {
-		opt = getopt_long(argc, argv, "cd:e:IOsaq:",
+		opt = getopt_long(argc, argv, "cd:e:IOsaq:t:",
 				  long_options, &option_index);
 
 		if (opt == EOF)
@@ -137,6 +140,13 @@ int main(int argc, char *argv[])
 				exit(EXIT_FAILURE);
 			}
 			has_queue_d = true;
+			break;
+		case 't':
+			ret = sscanf(optarg, "%u", &transfer_size);
+			if (ret != 1) {
+				printf("Invalid argument: %s\n", optarg);
+				exit(EXIT_FAILURE);
+			}
 			break;
 		default:
 			break;
@@ -201,6 +211,9 @@ int main(int argc, char *argv[])
 	/* Default to IN transfers */
 	config->dir_out = is_OUT;
 
+	/* Default to a transfer size of 64 bytes */
+	config->size = (transfer_size ? transfer_size : 0);
+
 	/*
 	 * At this point, the arguments are sane.
 	 */
@@ -221,17 +234,22 @@ int main(int argc, char *argv[])
 	return do_benchmark(config);
 }
 
-static int do_sync_bench(libusb_device_handle *handle, unsigned char ep)
+static int do_sync_bench(libusb_device_handle *handle, unsigned char ep,
+			 uint32_t transz)
 {
 	int ret, len;
-	uint8_t buf[1024];
+	uint8_t *buf;
 	uint64_t start_nsec, end_nsec;
 	double speed;
 
-	len = 10000;
+	if ((buf = malloc(transz)) == NULL) {
+		printf("Cannot allocate buffer\n");
+		return EXIT_FAILURE;
+	}
+
 	start_nsec = get_time_nsec();
 	while (1) {
-		ret = libusb_bulk_transfer(handle, ep, buf, sizeof(buf), &len, 1000);
+		ret = libusb_bulk_transfer(handle, ep, buf, transz, &len, 1000);
 		if (ret != LIBUSB_SUCCESS) {
 			printf("Bulk transfer error: %s\n", libusb_error_name(ret));
 			return EXIT_FAILURE;
@@ -243,6 +261,9 @@ static int do_sync_bench(libusb_device_handle *handle, unsigned char ep)
 		start_nsec = end_nsec;
 		fflush(stdout);
 	}
+
+	/* Never reached */
+	free(buf);
 }
 
 static int async_in(libusb_device_handle *handle, uint8_t endpoint)
@@ -288,7 +309,7 @@ int do_benchmark(struct bench_cfg *conf)
 			return async_in(handle, conf->ep);
 	}
 	else {
-		do_sync_bench(handle, ep);
+		return do_sync_bench(handle, ep, conf->size);
 	}
 
 	return EXIT_SUCCESS;

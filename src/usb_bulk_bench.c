@@ -40,13 +40,6 @@ struct bench_cfg {
 	uint32_t size;
 };
 
-inline uint64_t get_time_nsec()
-{
-	struct timespec timer;
-	clock_gettime(CLOCK_MONOTONIC, &timer);
-	return timer.tv_sec * 1E9 + timer.tv_nsec;
-};
-
 int do_benchmark(struct bench_cfg *conf);
 
 static void print_copyright(void)
@@ -247,15 +240,14 @@ static int do_sync_bench(libusb_device_handle *handle, unsigned char ep,
 {
 	int ret, len;
 	uint8_t *buf;
-	uint64_t start_nsec, end_nsec;
-	double speed;
+	double start_nsec, end_nsec, speed;
 
 	if ((buf = malloc(transz)) == NULL) {
 		printf("Cannot allocate buffer\n");
 		return EXIT_FAILURE;
 	}
 
-	start_nsec = get_time_nsec();
+	start_nsec = get_time();
 	while (1) {
 		ret = libusb_bulk_transfer(handle, ep, buf, transz, &len,
 					   TRANSFER_TIMEOUT);
@@ -264,9 +256,9 @@ static int do_sync_bench(libusb_device_handle *handle, unsigned char ep,
 			       libusb_error_name(ret));
 			return EXIT_FAILURE;
 		}
-		end_nsec = get_time_nsec();
+		end_nsec = get_time();
 
-		speed = (double)len / (end_nsec-start_nsec) * 1E9L;
+		speed = (double)len / (end_nsec-start_nsec);
 		printf("\rSpeed %.1fKiB/s", speed/1024 );
 		start_nsec = end_nsec;
 		fflush(stdout);

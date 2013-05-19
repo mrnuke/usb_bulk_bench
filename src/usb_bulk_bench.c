@@ -232,7 +232,7 @@ inline double get_time()
 {
 	struct timespec timer;
 	clock_gettime(CLOCK_MONOTONIC, &timer);
-	return (double)timer.tv_sec + (double)(timer.tv_nsec)/1E9d;
+	return (double)timer.tv_sec + (double)(timer.tv_nsec)/1E9;
 }
 
 static int do_sync_bench(libusb_device_handle *handle, unsigned char ep,

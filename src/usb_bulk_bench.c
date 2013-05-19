@@ -259,7 +259,7 @@ static int do_sync_bench(libusb_device_handle *handle, unsigned char ep,
 		end_nsec = get_time();
 
 		speed = (double)len / (end_nsec-start_nsec);
-		printf("\rSpeed %.1fKiB/s", speed/1024 );
+		printf("\rSpeed %.1f KiB/s", speed/1024 );
 		start_nsec = end_nsec;
 		fflush(stdout);
 	}

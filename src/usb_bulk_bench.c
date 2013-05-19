@@ -404,6 +404,7 @@ int do_benchmark(struct bench_cfg *conf)
 
 	if ((ret = libusb_claim_interface(handle, 0)) != LIBUSB_SUCCESS) {
 		printf("Cannot claim device: %s\n", libusb_error_name(ret));
+		return EXIT_FAILURE;
 	}
 
 	ep = conf->ep;

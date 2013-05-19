@@ -27,6 +27,7 @@
 #include <sys/time.h>
 
 #define MAX_QUEUE_DEPTH		32
+#define TRANSFER_TIMEOUT	1000
 #define ARRAY_SIZE(x)		(sizeof(x)/sizeof(x[0]))
 
 struct bench_cfg {
@@ -256,7 +257,7 @@ static int do_sync_bench(libusb_device_handle *handle, unsigned char ep,
 
 	start_nsec = get_time_nsec();
 	while (1) {
-		ret = libusb_bulk_transfer(handle, ep, buf, transz, &len, 1000);
+		ret = libusb_bulk_transfer(handle, ep, buf, transz, &len, TRANSFER_TIMEOUT);
 		if (ret != LIBUSB_SUCCESS) {
 			printf("Bulk transfer error: %s\n", libusb_error_name(ret));
 			return EXIT_FAILURE;
@@ -362,7 +363,7 @@ static int do_async_bench(libusb_context *ctx, libusb_device_handle *handle,
 		transfers[i] = libusb_alloc_transfer(0);
 		curr_buf = buf + transz * i;
 		libusb_fill_bulk_transfer(transfers[i], handle, ep, curr_buf,
-					  transz, async_cb, (void*)i, 1000);
+					  transz, async_cb, (void*)i, TRANSFER_TIMEOUT);
 		starttimes[i] = get_time();
 		ret = libusb_submit_transfer(transfers[i]);
 		if (ret != LIBUSB_SUCCESS) {

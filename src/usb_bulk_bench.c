@@ -221,17 +221,14 @@ int main(int argc, char *argv[])
 	return do_benchmark(config);
 }
 
-static int sync_in(libusb_device_handle *handle, uint8_t endpoint)
+static int do_sync_bench(libusb_device_handle *handle, unsigned char ep)
 {
 	int ret, len;
-	unsigned char ep;
 	uint8_t buf[1024];
 	uint64_t start_nsec, end_nsec;
 	double speed;
 
-	ep = endpoint | LIBUSB_ENDPOINT_IN;
-
-	len = 1000000;
+	len = 10000;
 	start_nsec = get_time_nsec();
 	while (1) {
 		ret = libusb_bulk_transfer(handle, ep, buf, sizeof(buf), &len, 1000);
@@ -246,10 +243,6 @@ static int sync_in(libusb_device_handle *handle, uint8_t endpoint)
 		start_nsec = end_nsec;
 		fflush(stdout);
 	}
-}
-static int sync_out(libusb_device_handle *handle, uint8_t endpoint)
-{
-	return EXIT_SUCCESS;
 }
 
 static int async_in(libusb_device_handle *handle, uint8_t endpoint)
@@ -266,6 +259,7 @@ static int async_out(libusb_device_handle *handle, uint8_t endpoint)
 int do_benchmark(struct bench_cfg *conf)
 {
 	int ret;
+	unsigned char ep;
 	libusb_context *ctx;
 	libusb_device_handle *handle;
 
@@ -284,6 +278,9 @@ int do_benchmark(struct bench_cfg *conf)
 		printf("Cannot claim device: %s\n", libusb_error_name(ret));
 	}
 
+	ep = conf->ep;
+	ep |= (conf->dir_out ? LIBUSB_ENDPOINT_OUT : LIBUSB_ENDPOINT_IN);
+
 	if (conf->async) {
 		if (conf->dir_out)
 			return async_out(handle, conf->ep);
@@ -291,10 +288,7 @@ int do_benchmark(struct bench_cfg *conf)
 			return async_in(handle, conf->ep);
 	}
 	else {
-		if (conf->dir_out)
-			return sync_out(handle, conf->ep);
-		else
-			return sync_in(handle, conf->ep);
+		do_sync_bench(handle, ep);
 	}
 
 	return EXIT_SUCCESS;
